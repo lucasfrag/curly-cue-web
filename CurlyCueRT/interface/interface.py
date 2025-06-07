@@ -27,17 +27,14 @@ def log(texto):
 def abrir_blender_callback():
     log("🚀 Abrindo Blender...")
     try:
+        log("🧠 Abrindo Blender com modelo base e fios...")
+
+        blender_script = Path(__file__).parent / "../blender_scripts/import_with_head.py"
         subprocess.Popen([
             str(BLENDER_EXE),
-            "--python-expr",
-            (
-                "import bpy;"
-                "bpy.ops.wm.read_homefile(use_empty=True);"
-                "bpy.ops.preferences.addon_enable(module='io_scene_obj');"
-                f"bpy.ops.import_scene.obj(filepath=r'{str(OUT_OBJ)}')"
-            )
+            "--python", str(blender_script.resolve())
         ])
-        log("✅ Blender iniciado com sucesso!")
+        log("✅ Blender aberto com modelo base e fios.")
     except Exception as e:
         log(f"❌ Erro ao abrir Blender: {e}")
 
