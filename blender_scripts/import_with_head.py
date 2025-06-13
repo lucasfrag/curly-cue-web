@@ -1,7 +1,8 @@
 import bpy
 import os
+from mathutils import Vector
 
-# Caminhos absolutos dos arquivos
+# Caminhos absolutos
 base_path = os.path.dirname(__file__)
 hair_path = os.path.abspath(os.path.join(base_path, "../outputs/70.obj"))
 head_path = os.path.abspath(os.path.join(base_path, "../data/head_models/headMesh.obj"))
@@ -9,34 +10,51 @@ head_path = os.path.abspath(os.path.join(base_path, "../data/head_models/headMes
 # Limpa a cena
 bpy.ops.wm.read_homefile(use_empty=True)
 
-# Ativa o addon .obj
+# Ativa o suporte a .obj
 bpy.ops.preferences.addon_enable(module="io_scene_obj")
 
-# === Importa cabeça ===
-before_import = set(bpy.data.objects)
+# === Importa a cabeça ===
+before = set(bpy.data.objects)
 bpy.ops.import_scene.obj(filepath=head_path)
-after_import = set(bpy.data.objects)
-head_obj = (after_import - before_import).pop()
-head_obj.name = "HeadModel"
-head_obj.location = (0, 0, 0)
-bpy.context.view_layer.objects.active = head_obj
+after = set(bpy.data.objects)
+head = (after - before).pop()
+head.name = "HeadModel"
+head.location = (0, 0, 0)
+bpy.context.view_layer.objects.active = head
 bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
-# === Importa fios ===
-before_import = set(bpy.data.objects)
+# Cria empty e detecta o objeto criado
+before = set(bpy.data.objects)
+bpy.ops.object.empty_add(type='PLAIN_AXES', location=(0, 0, 0))
+after = set(bpy.data.objects)
+anchor = (after - before).pop()
+anchor.name = "AnchorHeadTop"
+
+# Move o empty para o topo da cabeça (Z máximo)
+top_z = max((head.matrix_world @ v.co).z for v in head.data.vertices)
+anchor.location = Vector((0, 0, top_z))
+
+# === Importa o cabelo ===
+before = set(bpy.data.objects)
 bpy.ops.import_scene.obj(filepath=hair_path)
-after_import = set(bpy.data.objects)
-hair_obj = (after_import - before_import).pop()
-hair_obj.name = "HairStrands"
+after = set(bpy.data.objects)
+hair = (after - before).pop()
+hair.name = "HairStrands"
 
-# Alinha fios sobre a cabeça
-head_top_z = max((head_obj.matrix_world @ v.co).z for v in head_obj.data.vertices)
-hair_bottom_z = min((hair_obj.matrix_world @ v.co).z for v in hair_obj.data.vertices)
-offset = head_top_z - hair_bottom_z
-hair_obj.location.z += offset
+# Centraliza o cabelo em X/Y, baseia Z na parte inferior dos fios
+hair_bottom = min((hair.matrix_world @ v.co).z for v in hair.data.vertices)
+sum_xy = Vector((0.0, 0.0))
+for v in hair.data.vertices:
+    world_co = hair.matrix_world @ v.co
+    sum_xy += Vector((world_co.x, world_co.y))
+hair_center_xy = sum_xy / len(hair.data.vertices)
 
-# Aplica transformação
-bpy.context.view_layer.objects.active = hair_obj
+hair.location = Vector((anchor.location.x - hair_center_xy.x,
+                        anchor.location.y - hair_center_xy.y,
+                        anchor.location.z - hair_bottom))
+
+# Aplica transformações
+bpy.context.view_layer.objects.active = hair
 bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
-print("✅ Fios posicionados corretamente sobre a cabeça.")
+print("✅ Cabelo posicionado com sucesso.")
