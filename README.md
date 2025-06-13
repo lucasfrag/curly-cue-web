@@ -1,4 +1,4 @@
-# CurlyCueGeometry
+# Curly Cue Geometry
 
 CurlyCueGeometry is a toolset for generating and styling curly hair strand geometry from guide strands, inspired by the paper ["Curly-Cue: Curly Hair Geometry from a Single View"](https://doi.org/10.1145/3680528.3687641).
 
