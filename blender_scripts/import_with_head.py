@@ -3,7 +3,7 @@ import os
 
 # Caminhos absolutos dos arquivos
 base_path = os.path.dirname(__file__)
-hair_path = os.path.abspath(os.path.join(base_path, "../../outputs/70.obj"))
+hair_path = os.path.abspath(os.path.join(base_path, "../outputs/70.obj"))
 head_path = os.path.abspath(os.path.join(base_path, "../data/head_models/headMesh.obj"))
 
 # Limpa a cena
