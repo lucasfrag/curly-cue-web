@@ -1,120 +1,193 @@
-// App.tsx
-import { useRef, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
+import "./App.css";
+
+type Preset = {
+  name: string;
+  guidePath: string;
+  scalpPath: string;
+  groupingCSV: string;
+};
+
+const presets: Preset[] = [
+  {
+    name: "Side Swatch",
+    guidePath: "data/guide_strands/sideSwatchDroopSequence/70.obj",
+    scalpPath: "data/scalp_clouds/sideSwatchScalp.obj",
+    groupingCSV: "data/matching_csvs/sideSwatchGuides-sideSwatchScalp-groupingsr30.csv",
+  },
+];
 
 export default function App() {
-  const mountRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [selectedPreset, setSelectedPreset] = useState(presets[0]);
+  const [loading, setLoading] = useState(false);
+  const [log, setLog] = useState("Aguardando geração...");
+
   const [params, setParams] = useState({
+    curliness: 0.5,
+    length: 1.0,
     density: 1.0,
-    scale: 1.0,
-    curvature: 1.0,
   });
 
   useEffect(() => {
-    const width = mountRef.current?.clientWidth || 800;
-    const height = mountRef.current?.clientHeight || 600;
+    if (!containerRef.current) return;
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(width, height);
-    mountRef.current?.appendChild(renderer.domElement);
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 100);
+    camera.position.set(0, 0.2, 1.2);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    containerRef.current.innerHTML = "";
+    containerRef.current.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    controls.dampingFactor = 0.1;
+    controls.rotateSpeed = 0.5;
 
-    const light = new THREE.DirectionalLight(0xffffff, 1);
-    light.position.set(0, 1, 2);
-    scene.add(light);
+    scene.background = new THREE.Color("#eef2f3");
 
-    const ambient = new THREE.AmbientLight(0x404040);
-    scene.add(ambient);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+    dirLight.position.set(2, 2, 2);
+    scene.add(ambientLight, dirLight);
 
-    camera.position.z = 3;
+    const loader = new OBJLoader();
+    let hairObject: THREE.Group;
 
-    // Placeholder: Add sample geometry
-    const geometry = new THREE.TorusKnotGeometry(0.5, 0.15, 100, 16);
-    const material = new THREE.MeshStandardMaterial({ color: 0xff7f50 });
-    const mesh = new THREE.Mesh(geometry, material);
-    scene.add(mesh);
+    loader.load(
+      "http://localhost:8000/output/strands.obj",
+      (obj) => {
+        hairObject = obj;
+        hairObject.scale.set(0.05, 0.05, 0.05);
+
+        const box = new THREE.Box3().setFromObject(hairObject);
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+        hairObject.position.sub(center);
+
+        scene.add(hairObject);
+      },
+      undefined,
+      (err) => {
+        console.error("Erro ao carregar .obj", err);
+        setLog("Erro ao carregar o modelo 3D.");
+      }
+    );
 
     const animate = () => {
       requestAnimationFrame(animate);
-      mesh.rotation.y += 0.01;
       controls.update();
       renderer.render(scene, camera);
     };
     animate();
 
     return () => {
-      mountRef.current?.removeChild(renderer.domElement);
+      containerRef.current?.removeChild(renderer.domElement);
     };
-  }, []);
+  }, [selectedPreset]);
+
+  const handleGenerate = async () => {
+    setLoading(true);
+    setLog("Enviando solicitação para o backend...");
+    try {
+      const response = await fetch("http://localhost:8000/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          guidePath: selectedPreset.guidePath,
+          scalpPath: selectedPreset.scalpPath,
+          groupingCSV: selectedPreset.groupingCSV,
+          outputPath: "output/strands.obj",
+          ...params,
+        }),
+      });
+      const data = await response.json();
+      setLog(`Geração concluída: ${data.message || "OK"}`);
+    } catch (error) {
+      setLog("Erro ao gerar cabelo.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="w-screen h-screen flex bg-zinc-900 text-white font-sans overflow-hidden">
-      {/* Painel de Controle */}
-      <div className="w-1/2 h-full p-8 flex flex-col gap-6 bg-zinc-950 shadow-lg">
-        <h1 className="text-3xl font-bold mb-2">🎨 CurlyCue - Configuração</h1>
+    <div className="app-container">
+      <div className="sidebar">
+        <h1>Gerador de Cabelo</h1>
 
-        <div className="space-y-4">
-          <div>
-            <label className="block mb-1 text-sm">Densidade</label>
-            <input
-              type="range"
-              min="0.1"
-              max="2"
-              step="0.1"
-              value={params.density}
-              onChange={(e) => setParams({ ...params, density: parseFloat(e.target.value) })}
-              className="w-full"
-            />
-            <p className="text-xs mt-1">Valor: {params.density.toFixed(1)}</p>
-          </div>
+        <label htmlFor="preset">Preset:</label>
+        <select
+          id="preset"
+          value={selectedPreset.name}
+          onChange={(e) =>
+            setSelectedPreset(presets.find((p) => p.name === e.target.value)!)
+          }
+        >
+          {presets.map((preset) => (
+            <option key={preset.name} value={preset.name}>
+              {preset.name}
+            </option>
+          ))}
+        </select>
 
-          <div>
-            <label className="block mb-1 text-sm">Escala</label>
-            <input
-              type="range"
-              min="0.1"
-              max="2"
-              step="0.1"
-              value={params.scale}
-              onChange={(e) => setParams({ ...params, scale: parseFloat(e.target.value) })}
-              className="w-full"
-            />
-            <p className="text-xs mt-1">Valor: {params.scale.toFixed(1)}</p>
-          </div>
+        <div className="slider-group">
+          <label htmlFor="curliness">Curliness: {params.curliness.toFixed(2)}</label>
+          <input
+            type="range"
+            id="curliness"
+            min={0}
+            max={1}
+            step={0.01}
+            value={params.curliness}
+            onChange={(e) =>
+              setParams({ ...params, curliness: parseFloat(e.target.value) })
+            }
+          />
 
-          <div>
-            <label className="block mb-1 text-sm">Curvatura</label>
-            <input
-              type="range"
-              min="0.1"
-              max="2"
-              step="0.1"
-              value={params.curvature}
-              onChange={(e) => setParams({ ...params, curvature: parseFloat(e.target.value) })}
-              className="w-full"
-            />
-            <p className="text-xs mt-1">Valor: {params.curvature.toFixed(1)}</p>
-          </div>
+          <label htmlFor="length">Length: {params.length.toFixed(2)}</label>
+          <input
+            type="range"
+            id="length"
+            min={0.1}
+            max={2.0}
+            step={0.1}
+            value={params.length}
+            onChange={(e) =>
+              setParams({ ...params, length: parseFloat(e.target.value) })
+            }
+          />
 
-          <button
-            className="mt-6 bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-4 rounded-lg transition-all shadow"
-            onClick={() => alert("Gerar Geometria ainda não implementado")}
-          >
-            🚀 Gerar Geometria
-          </button>
+          <label htmlFor="density">Density: {params.density.toFixed(2)}</label>
+          <input
+            type="range"
+            id="density"
+            min={0.1}
+            max={2.0}
+            step={0.1}
+            value={params.density}
+            onChange={(e) =>
+              setParams({ ...params, density: parseFloat(e.target.value) })
+            }
+          />
         </div>
+
+        <button onClick={handleGenerate} disabled={loading}>
+          {loading ? "Gerando..." : "Gerar Cabelo"}
+        </button>
+
+        {loading && <div className="loader"></div>}
+
+        <p className="log">{log}</p>
       </div>
 
-      {/* Visualização 3D */}
-      <div className="w-1/2 h-full relative">
-        <div ref={mountRef} className="w-full h-full" />
-      </div>
+      <div className="preview" ref={containerRef}></div>
     </div>
   );
 }
