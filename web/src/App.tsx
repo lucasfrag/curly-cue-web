@@ -35,7 +35,7 @@ export default function App() {
   const [groupingRadius, setGroupingRadius] = useState("30");
   const [color, setColor] = useState("#000000");
   const [params, setParams] = useState({ curliness: 0.5, length: 1.0, density: 1.0 });
-  const [wind, setWind] = useState(true);
+  
   const [showScalp, setShowScalp] = useState(true);
 
   useEffect(() => {
@@ -97,7 +97,7 @@ setTimeout(centerScene, 300); // espera carregar os modelos antes de centralizar
     return () => {
       containerRef.current?.removeChild(renderer.domElement);
     };
-  }, [selectedPreset, wind]);
+  }, [selectedPreset]);
 
   useEffect(() => {
     if (!sceneRef.current) return;
@@ -215,10 +215,6 @@ const loadScalpModel = (scene: THREE.Scene) => {
         <label htmlFor="color" title="Escolha a cor dos fios gerados.">Cor do cabelo:</label>
         <input type="color" id="color" value={color} onChange={(e) => setColor(e.target.value)} />
 
-        <label>
-          <input type="checkbox" checked={wind} onChange={(e) => setWind(e.target.checked)} />
-          Ativar vento
-        </label>
 
         <label>
           <input type="checkbox" checked={showScalp} onChange={(e) => setShowScalp(e.target.checked)} />

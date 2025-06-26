@@ -1,8 +1,8 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-import subprocess
+from projects.clump_stylizer.curly_pipeline import generate_strands
+from fastapi.staticfiles import StaticFiles
 import os
 
 app = FastAPI()
@@ -37,20 +37,15 @@ class HairRequest(BaseModel):
 
 
 @app.post("/generate")
-async def generate_hair(req: HairRequest):
-    cmd = [
-        "python", "wispify.py",
-        req.guidePath,
-        req.scalpPath,
-        req.groupingCSV,
-        req.outputPath,
-        "--curliness", str(req.curliness),
-        "--length", str(req.length),
-        "--density", str(req.density),
-        "--color", req.color
-    ]
-    try:
-        subprocess.run(cmd, check=True)
-        return {"message": "Geração concluída com sucesso."}
-    except subprocess.CalledProcessError as e:
-        return {"error": str(e)}
+async def generate_hair(params: HairRequest):
+    strands = generate_strands(
+        guide_path=params.guidePath,
+        scalp_path=params.scalpPath,
+        grouping_csv=params.groupingCSV,
+        output_path=params.outputPath,
+        curliness=params.curliness,
+        length=params.length,
+        density=params.density,
+        color=params.color
+    )
+    return {"strands": strands}
