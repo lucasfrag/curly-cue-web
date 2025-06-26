@@ -1,29 +1,30 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from projects.clump_stylizer.curly_pipeline import generate_strands
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+import subprocess
 import os
-
 
 app = FastAPI()
 
-# Garante que a pasta 'output' exista
-os.makedirs("output", exist_ok=True)
-
-# Expõe a pasta como arquivos estáticos na rota /output
-app.mount("/output", StaticFiles(directory="output"), name="output")
-
-# Permitir chamadas do frontend local (ex: localhost:5173)
+# Habilita CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Em produção, especifique o domínio correto
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Dados esperados no corpo da requisição
+# Monta a pasta 'output' como estática (para acessar strands.obj/mtl)
+output_dir = os.path.join(os.path.dirname(__file__), "output")
+app.mount("/output", StaticFiles(directory=output_dir), name="output")
+
+# Monta a pasta 'data' como estática (para acessar scalpPath direto via URL)
+data_dir = os.path.join(os.path.dirname(__file__), "data")
+app.mount("/data", StaticFiles(directory=data_dir), name="data")
+
+
+# Modelo para requisição
 class HairRequest(BaseModel):
     guidePath: str
     scalpPath: str
@@ -32,19 +33,24 @@ class HairRequest(BaseModel):
     curliness: float
     length: float
     density: float
-    color: str  # ex: "#ff0000"
+    color: str
 
-# Rota principal para gerar os fios
+
 @app.post("/generate")
-async def generate_hair(params: HairRequest):
-    strands = generate_strands(
-        guide_path=params.guidePath,
-        scalp_path=params.scalpPath,
-        grouping_csv=params.groupingCSV,
-        output_path=params.outputPath,
-        curliness=params.curliness,
-        length=params.length,
-        density=params.density,
-        color=params.color
-    )
-    return {"strands": strands}
+async def generate_hair(req: HairRequest):
+    cmd = [
+        "python", "wispify.py",
+        req.guidePath,
+        req.scalpPath,
+        req.groupingCSV,
+        req.outputPath,
+        "--curliness", str(req.curliness),
+        "--length", str(req.length),
+        "--density", str(req.density),
+        "--color", req.color
+    ]
+    try:
+        subprocess.run(cmd, check=True)
+        return {"message": "Geração concluída com sucesso."}
+    except subprocess.CalledProcessError as e:
+        return {"error": str(e)}

@@ -5,7 +5,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader";
 import "./App.css";
 
-// ... [tipagem e presets iguais] ...
+// Tipagem e presets
 
 type Preset = {
   name: string;
@@ -26,6 +26,8 @@ const presets: Preset[] = [
 
 export default function App() {
   const sceneRef = useRef<THREE.Scene>();
+  const hairRef = useRef<THREE.Object3D>();
+  const scalpRef = useRef<THREE.Object3D>();
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedPreset, setSelectedPreset] = useState(presets[0]);
   const [loading, setLoading] = useState(false);
@@ -33,13 +35,14 @@ export default function App() {
   const [groupingRadius, setGroupingRadius] = useState("30");
   const [color, setColor] = useState("#000000");
   const [params, setParams] = useState({ curliness: 0.5, length: 1.0, density: 1.0 });
+  const [wind, setWind] = useState(true);
+  const [showScalp, setShowScalp] = useState(true);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    loadHairModel(scene);
 
     const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 100);
     camera.position.set(0, 0.2, 1.2);
@@ -63,17 +66,46 @@ export default function App() {
     dirLight.position.set(2, 2, 2);
     scene.add(ambientLight, dirLight);
 
-    const animate = () => {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-    };
-    animate();
+    const clock = new THREE.Clock();
+
+const centerScene = () => {
+  const group = new THREE.Group();
+  if (hairRef.current) group.add(hairRef.current.clone());
+  if (scalpRef.current) group.add(scalpRef.current.clone());
+
+  const box = new THREE.Box3().setFromObject(group);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+
+  controls.target.copy(center); // centraliza o foco
+  camera.position.copy(center.clone().add(new THREE.Vector3(0, 0.2, 1.2))); // reposiciona a câmera
+  camera.lookAt(center);
+};
+
+const animate = () => {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+};
+
+animate();
+setTimeout(centerScene, 300); // espera carregar os modelos antes de centralizar
+
+    loadHairModel(scene);
+    if (showScalp) loadScalpModel(scene);
 
     return () => {
       containerRef.current?.removeChild(renderer.domElement);
     };
-  }, [selectedPreset]);
+  }, [selectedPreset, wind]);
+
+  useEffect(() => {
+    if (!sceneRef.current) return;
+    const scene = sceneRef.current;
+    const scalp = scene.getObjectByName("ScalpModel");
+    if (scalp && !showScalp) scene.remove(scalp);
+    else if (!scalp && showScalp) loadScalpModel(scene);
+  }, [showScalp, selectedPreset]);
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -102,6 +134,13 @@ export default function App() {
     if (sceneRef.current) loadHairModel(sceneRef.current);
   };
 
+  const centerObject = (obj: THREE.Object3D) => {
+    const box = new THREE.Box3().setFromObject(obj);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    obj.position.sub(center);
+  };
+
   const loadHairModel = (scene: THREE.Scene) => {
     const mtlLoader = new MTLLoader();
     mtlLoader.setPath("http://localhost:8000/output/");
@@ -114,19 +153,30 @@ export default function App() {
       objLoader.load("strands.obj", (obj) => {
         obj.scale.set(0.05, 0.05, 0.05);
 
-        const box = new THREE.Box3().setFromObject(obj);
-        const center = new THREE.Vector3();
-        box.getCenter(center);
-        obj.position.sub(center);
-
         const existing = scene.getObjectByName("HairModel");
         if (existing) scene.remove(existing);
 
         obj.name = "HairModel";
+        hairRef.current = obj;
         scene.add(obj);
       });
     });
   };
+
+const loadScalpModel = (scene: THREE.Scene) => {
+  const loader = new OBJLoader();
+  loader.setPath("http://localhost:8000/");
+  loader.load(selectedPreset.scalpPath, (obj) => {
+    obj.name = "ScalpModel";
+    obj.scale.set(0.05, 0.05, 0.05);
+
+    const existing = scene.getObjectByName("ScalpModel");
+    if (existing) scene.remove(existing);
+
+    scalpRef.current = obj;
+    scene.add(obj);
+  });
+};
 
   return (
     <div className="app-container">
@@ -164,6 +214,16 @@ export default function App() {
 
         <label htmlFor="color" title="Escolha a cor dos fios gerados.">Cor do cabelo:</label>
         <input type="color" id="color" value={color} onChange={(e) => setColor(e.target.value)} />
+
+        <label>
+          <input type="checkbox" checked={wind} onChange={(e) => setWind(e.target.checked)} />
+          Ativar vento
+        </label>
+
+        <label>
+          <input type="checkbox" checked={showScalp} onChange={(e) => setShowScalp(e.target.checked)} />
+          Mostrar couro cabeludo
+        </label>
 
         <button onClick={handleGenerate} disabled={loading} title="Gera novos fios de cabelo com base nos parâmetros definidos.">
           {loading ? "Gerando..." : "Gerar Cabelo"}
