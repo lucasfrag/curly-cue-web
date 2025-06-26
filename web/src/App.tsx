@@ -5,8 +5,6 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader";
 import "./App.css";
 
-// Tipagem e presets
-
 type Preset = {
   name: string;
   guidePath: string;
@@ -29,14 +27,20 @@ export default function App() {
   const hairRef = useRef<THREE.Object3D>();
   const scalpRef = useRef<THREE.Object3D>();
   const containerRef = useRef<HTMLDivElement>(null);
+
   const [selectedPreset, setSelectedPreset] = useState(presets[0]);
   const [loading, setLoading] = useState(false);
   const [log, setLog] = useState("Aguardando geração...");
   const [groupingRadius, setGroupingRadius] = useState("30");
   const [color, setColor] = useState("#000000");
-  const [params, setParams] = useState({ curliness: 0.5, length: 1.0, density: 1.0, pattern: "spiral" });
-  const [windIntensity, setWindIntensity] = useState(0.5);
+  const [params, setParams] = useState({ curliness: 0.5, length: 1.0, density: 1.0 });
   const [showScalp, setShowScalp] = useState(true);
+
+  const [windOn, setWindOn] = useState(true);
+  const [windStrength, setWindStrength] = useState(0.1);
+  const [windSpeed, setWindSpeed] = useState(1.0);
+
+  const originalHairGeometries = useRef<{ mesh: THREE.Mesh; original: Float32Array }[]>([]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -68,23 +72,51 @@ export default function App() {
 
     const clock = new THREE.Clock();
 
+    const centerScene = () => {
+      const group = new THREE.Group();
+      if (hairRef.current) group.add(hairRef.current.clone());
+      if (scalpRef.current) group.add(scalpRef.current.clone());
+
+      const box = new THREE.Box3().setFromObject(group);
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+
+      controls.target.copy(center);
+      camera.position.copy(center.clone().add(new THREE.Vector3(0, 0.2, 1.2)));
+      camera.lookAt(center);
+    };
+
     const animate = () => {
       requestAnimationFrame(animate);
-      controls.update();
+      const elapsed = clock.getElapsedTime();
 
-      const time = clock.getElapsedTime();
-      if (hairRef.current) {
-        hairRef.current.children.forEach((child, i) => {
-          const angle = time * 2 + i * 0.2;
-          const offset = Math.sin(angle) * 0.005 * windIntensity;
-          child.rotation.z = offset;
+      if (windOn && originalHairGeometries.current.length > 0) {
+        originalHairGeometries.current.forEach(({ mesh, original }) => {
+          const geometry = mesh.geometry as THREE.BufferGeometry;
+          const positionAttr = geometry.attributes.position as THREE.BufferAttribute;
+          const pos = positionAttr.array as Float32Array;
+
+          for (let i = 0; i < pos.length; i += 3) {
+            const ox = original[i];
+            const oy = original[i + 1];
+            const oz = original[i + 2];
+
+            const offset = (oy + oz) * 2.0;
+            pos[i] = ox + Math.sin(elapsed * windSpeed + offset) * windStrength;
+            pos[i + 1] = oy;
+            pos[i + 2] = oz;
+          }
+
+          positionAttr.needsUpdate = true;
         });
       }
 
+      controls.update();
       renderer.render(scene, camera);
     };
 
     animate();
+    setTimeout(centerScene, 300);
 
     loadHairModel(scene);
     if (showScalp) loadScalpModel(scene);
@@ -147,6 +179,26 @@ export default function App() {
         obj.name = "HairModel";
         hairRef.current = obj;
         scene.add(obj);
+
+        originalHairGeometries.current = [];
+
+        obj.traverse((child) => {
+          const geometry = (child as any).geometry as THREE.BufferGeometry | undefined;
+
+          if (geometry && geometry.attributes?.position) {
+            const position = geometry.attributes.position as THREE.BufferAttribute;
+
+            geometry.setAttribute("position", new THREE.BufferAttribute(position.array, 3));
+            geometry.attributes.position.setUsage(THREE.DynamicDrawUsage);
+
+            originalHairGeometries.current.push({
+              mesh: child as THREE.Mesh,
+              original: position.array.slice() as Float32Array,
+            });
+
+            console.log("Adicionado segmento com", position.count, "vértices");
+          }
+        });
       });
     });
   };
@@ -173,14 +225,14 @@ export default function App() {
         <p className="description">Explore diferentes configurações de cabelo. Ajuste os parâmetros abaixo e visualize os resultados em tempo real.</p>
 
         <label htmlFor="preset">Modelo base (preset):</label>
-        <select id="preset" value={selectedPreset.name} onChange={(e) => setSelectedPreset(presets.find((p) => p.name === e.target.value)!)}>
+        <select id="preset" value={selectedPreset.name} onChange={(e) => setSelectedPreset(presets.find((p) => p.name === e.target.value)!)} >
           {presets.map((preset) => (
             <option key={preset.name} value={preset.name}>{preset.name}</option>
           ))}
         </select>
 
-        <label htmlFor="groupingRadius">Agrupamento (rX):</label>
-        <select id="groupingRadius" value={groupingRadius} onChange={(e) => setGroupingRadius(e.target.value)}>
+        <label htmlFor="groupingRadius" title="Agrupamento controla o quão agrupados os fios estão (mechas).">Agrupamento (rX):</label>
+        <select id="groupingRadius" value={groupingRadius} onChange={(e) => setGroupingRadius(e.target.value)} >
           <option value="1">r1 - Fios mais soltos</option>
           <option value="2">r2</option>
           <option value="5">r5</option>
@@ -198,31 +250,25 @@ export default function App() {
 
           <label htmlFor="density">Density: {params.density.toFixed(2)}</label>
           <input type="range" id="density" min={0.1} max={2.0} step={0.1} value={params.density} onChange={(e) => setParams({ ...params, density: parseFloat(e.target.value) })} />
-
-          <label htmlFor="pattern">Tipo de Curvatura:</label>
-          <select id="pattern" value={params.pattern} onChange={(e) => setParams({ ...params, pattern: e.target.value })}>
-            <option value="spiral">Espiral</option>
-            <option value="zigzag">Zigue-zague</option>
-            <option value="wavy">Ondulado</option>
-          </select>
         </div>
 
         <label htmlFor="color">Cor do cabelo:</label>
         <input type="color" id="color" value={color} onChange={(e) => setColor(e.target.value)} />
 
-        <label>
-          Intensidade do Vento: {windIntensity.toFixed(2)}
-          <input type="range" min="0" max="2" step="0.01" value={windIntensity} onChange={(e) => setWindIntensity(parseFloat(e.target.value))} />
-        </label>
+        <label><input type="checkbox" checked={showScalp} onChange={(e) => setShowScalp(e.target.checked)} /> Mostrar couro cabeludo</label>
 
-        <label>
-          <input type="checkbox" checked={showScalp} onChange={(e) => setShowScalp(e.target.checked)} />
-          Mostrar couro cabeludo
-        </label>
 
         <button onClick={handleGenerate} disabled={loading}>
           {loading ? "Gerando..." : "Gerar Cabelo"}
         </button>
+
+        <a
+          href="http://localhost:8000/output/strands.obj"
+          download="cabelo_gerado.obj"
+          className="download-button"
+        >
+          ⬇️ Baixar .obj
+        </a>
 
         {loading && <div className="loader"></div>}
         <p className="log">{log}</p>

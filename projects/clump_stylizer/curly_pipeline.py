@@ -1,62 +1,12 @@
 import os
-import json
-import math
+import subprocess
 
-
-def generate_mock_strands(output_json_path, curliness=0.5, length=1.0, density=1.0):
-    num_strands = int(100 * density)
-    points_per_strand = 20
-    strands = []
-
-    for s in range(num_strands):
-        base_x = (s % 10) * 0.005
-        base_y = (s // 10) * 0.005
-        strand = []
-        for i in range(points_per_strand):
-            t = i / (points_per_strand - 1)
-            z = -t * length
-            angle = t * math.pi * 10 * curliness
-            x = base_x + math.sin(angle) * 0.01 * curliness
-            y = base_y + math.cos(angle) * 0.01 * curliness
-            strand.append([x, y, z])
-        strands.append(strand)
-
-    os.makedirs(os.path.dirname(output_json_path), exist_ok=True)
-    with open(output_json_path, "w") as f:
-        json.dump(strands, f)
-
-    return strands
-
-
-def save_obj_and_mtl(strands, output_dir, color_hex="#000000"):
-    obj_path = os.path.join(output_dir, "strands.obj")
-    mtl_path = os.path.join(output_dir, "strands.mtl")
-    mtl_name = "hairMaterial"
-
-    r = int(color_hex[1:3], 16) / 255
-    g = int(color_hex[3:5], 16) / 255
-    b = int(color_hex[5:7], 16) / 255
-
-    with open(mtl_path, "w") as mtl:
-        mtl.write(f"newmtl {mtl_name}\n")
-        mtl.write(f"Kd {r:.4f} {g:.4f} {b:.4f}\n")  # Difusa
-        mtl.write(f"Ka 0.1 0.1 0.1\n")
-        mtl.write(f"Ks 0.2 0.2 0.2\n")
-        mtl.write(f"Ns 10.0\n")
-
-    with open(obj_path, "w") as obj:
-        obj.write(f"mtllib strands.mtl\n")
-        obj.write(f"usemtl {mtl_name}\n")
-        vertex_index = 1
-
-        for strand in strands:
-            for p in strand:
-                obj.write(f"v {p[0]} {p[1]} {p[2]}\n")
-            for i in range(1, len(strand)):
-                a = vertex_index + i - 1
-                b = vertex_index + i
-                obj.write(f"l {a} {b}\n")
-            vertex_index += len(strand)
+def hex_to_rgb_normalized(hex_color):
+    hex_color = hex_color.lstrip("#")
+    r = int(hex_color[0:2], 16) / 255
+    g = int(hex_color[2:4], 16) / 255
+    b = int(hex_color[4:6], 16) / 255
+    return r, g, b
 
 
 def generate_strands(
@@ -67,25 +17,84 @@ def generate_strands(
     curliness: float = 0.5,
     length: float = 1.0,
     density: float = 1.0,
-    color: str = "#000000"
+    color="#000000"
 ):
-    output_json_path = os.path.join("output", "strands.json")
-    output_dir = os.path.dirname(output_path)
-
-    print("🌀 Gerando fios com curvatura...")
-    print(f" - Curliness: {curliness}")
-    print(f" - Length: {length}")
-    print(f" - Density: {density}")
-    print(f" - Cor: {color}")
-    print(f" - Arquivo JSON: {output_json_path}")
-
-    strands = generate_mock_strands(
-        output_json_path=output_json_path,
-        curliness=curliness,
-        length=length,
-        density=density
+    
+    wispify_script = os.path.join(
+        os.path.dirname(__file__),
+        "wispify.py"
     )
 
-    print("💾 Salvando strands.obj e strands.mtl...")
-    save_obj_and_mtl(strands, output_dir, color)
-    print("✅ Tudo pronto!")
+    guide_path = os.path.abspath(guide_path)
+    scalp_path = os.path.abspath(scalp_path)
+    grouping_csv = os.path.abspath(grouping_csv)
+    output_path = os.path.abspath(output_path)
+    wispify_script = os.path.abspath(wispify_script)
+
+    subprocess.run(
+        [
+            "python",
+            os.path.basename(wispify_script),
+            guide_path,
+            scalp_path,
+            grouping_csv,
+            output_path,
+            "--curliness", str(curliness),
+            "--length", str(length),
+            "--density", str(density),
+        ],
+        cwd=os.path.dirname(wispify_script),
+        check=True
+    )
+
+# Gerar o arquivo strands.mtl com a cor personalizada
+    r, g, b = hex_to_rgb_normalized(color)
+    mtl_path = output_path.replace(".obj", ".mtl")
+    with open(mtl_path, "w") as mtl_file:
+        mtl_file.write(f"""newmtl HairMaterial
+        Kd {r:.3f} {g:.3f} {b:.3f}
+        Ka 0.1 0.1 0.1
+        Ks 0.0 0.0 0.0
+        d 1.0
+        illum 1
+        """)
+
+    # Adicionar referência ao .mtl dentro do .obj
+    with open(output_path, "r") as obj_file:
+        lines = obj_file.readlines()
+
+    lines.insert(0, "mtllib strands.mtl\n")
+    lines.insert(1, "usemtl HairMaterial\n")
+
+    with open(output_path, "w") as obj_file:
+        obj_file.writelines(lines)
+
+    print(f"Arquivo .mtl criado em {mtl_path}")
+
+
+
+
+
+
+    strands = read_obj_strands(output_path)
+    return strands
+
+
+def read_obj_strands(filename: str):
+    import numpy as np
+
+    strands = []
+    with open(filename, "r") as f:
+        current = []
+        for line in f:
+            if line.startswith("v "):
+                parts = line.strip().split()
+                x, y, z = map(float, parts[1:])
+                current.append([x, y, z])
+            elif line.startswith("o ") and current:
+                strands.append(current)
+                current = []
+        if current:
+            strands.append(current)
+
+    return strands
