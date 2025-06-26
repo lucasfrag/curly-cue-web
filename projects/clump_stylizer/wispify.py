@@ -182,6 +182,10 @@ if __name__ == "__main__":
     parser.add_argument("--wispR", help="Strictly-cohered wisp radius range", type=float, nargs=2, default=[0.07,0.35])
     parser.add_argument("--dropout", help="Probability of having a vertex drop out in strict area (range 0-1)", type=float, default=0.5)
 
+    parser.add_argument("--curliness", type=float, default=0.0, help="Curliness of the generated strands (0-1)")
+    parser.add_argument("--length", type=float, default=1.0, help="Length multiplier for strands")
+    parser.add_argument("--density", type=float, default=1.0, help="Density multiplier (fraction of strands to keep)")
+
     args = parser.parse_args()
     
     print(sys.argv, flush=True)
@@ -212,12 +216,28 @@ if __name__ == "__main__":
     marker = 0
     percent_mark = 0
     for i in range(len(e)):
+
     # for i in range(40,41):
         percent = int((i/len(e))*100)
         if percent >= percent_mark:
             print(f'{datetime.datetime.now()}: reached {percent}%', flush=True)
             percent_mark += 10
+        if args.density < 1.0 and random.random() > args.density:
+            continue
+        
         strand = v[e[i]]
+
+        # Ajusta comprimento
+        if args.length != 1.0:
+            strand = [p * args.length for p in strand]
+
+        # Ajusta curliness com uma ondulação leve (senoide)
+        if args.curliness > 0.0:
+            for k, p in enumerate(strand):
+                offset = math.sin(k * 0.5) * 0.002 * args.curliness
+                p[0] += offset
+                p[2] += offset
+
         for j in range(len(clumping_map[i])):
             amps_rand = random.choice(amps_coll) #creating the random displacement at the loose portion
             angs_rand = random.choice(angs_coll)

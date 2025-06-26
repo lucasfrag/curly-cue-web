@@ -24,19 +24,27 @@ app.add_middleware(
 )
 
 # Dados esperados no corpo da requisição
-class HairParams(BaseModel):
+class HairRequest(BaseModel):
     guidePath: str
     scalpPath: str
     groupingCSV: str
-    outputPath: str = "output/strands.obj"
+    outputPath: str
+    curliness: float
+    length: float
+    density: float
+    color: str  # ex: "#ff0000"
 
 # Rota principal para gerar os fios
 @app.post("/generate")
-async def generate_hair(params: HairParams):
+async def generate_hair(params: HairRequest):
     strands = generate_strands(
         guide_path=params.guidePath,
         scalp_path=params.scalpPath,
         grouping_csv=params.groupingCSV,
-        output_path=params.outputPath
+        output_path=params.outputPath,
+        curliness=params.curliness,
+        length=params.length,
+        density=params.density,
+        color=params.color
     )
     return {"strands": strands}

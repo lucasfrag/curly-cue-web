@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
+import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader";
 import "./App.css";
+
+// ... [tipagem e presets iguais] ...
 
 type Preset = {
   name: string;
@@ -16,26 +19,28 @@ const presets: Preset[] = [
     name: "Side Swatch",
     guidePath: "data/guide_strands/sideSwatchDroopSequence/70.obj",
     scalpPath: "data/scalp_clouds/sideSwatchScalp.obj",
-    groupingCSV: "data/matching_csvs/sideSwatchGuides-sideSwatchScalp-groupingsr30.csv",
+    groupingCSV:
+      "data/matching_csvs/sideSwatchGuides-sideSwatchScalp-groupingsr30.csv",
   },
 ];
 
 export default function App() {
+  const sceneRef = useRef<THREE.Scene>();
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedPreset, setSelectedPreset] = useState(presets[0]);
   const [loading, setLoading] = useState(false);
   const [log, setLog] = useState("Aguardando geração...");
-
-  const [params, setParams] = useState({
-    curliness: 0.5,
-    length: 1.0,
-    density: 1.0,
-  });
+  const [groupingRadius, setGroupingRadius] = useState("30");
+  const [color, setColor] = useState("#000000");
+  const [params, setParams] = useState({ curliness: 0.5, length: 1.0, density: 1.0 });
 
   useEffect(() => {
     if (!containerRef.current) return;
 
     const scene = new THREE.Scene();
+    sceneRef.current = scene;
+    loadHairModel(scene);
+
     const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 100);
     camera.position.set(0, 0.2, 1.2);
 
@@ -57,29 +62,6 @@ export default function App() {
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
     dirLight.position.set(2, 2, 2);
     scene.add(ambientLight, dirLight);
-
-    const loader = new OBJLoader();
-    let hairObject: THREE.Group;
-
-    loader.load(
-      "http://localhost:8000/output/strands.obj",
-      (obj) => {
-        hairObject = obj;
-        hairObject.scale.set(0.05, 0.05, 0.05);
-
-        const box = new THREE.Box3().setFromObject(hairObject);
-        const center = new THREE.Vector3();
-        box.getCenter(center);
-        hairObject.position.sub(center);
-
-        scene.add(hairObject);
-      },
-      undefined,
-      (err) => {
-        console.error("Erro ao carregar .obj", err);
-        setLog("Erro ao carregar o modelo 3D.");
-      }
-    );
 
     const animate = () => {
       requestAnimationFrame(animate);
@@ -103,9 +85,10 @@ export default function App() {
         body: JSON.stringify({
           guidePath: selectedPreset.guidePath,
           scalpPath: selectedPreset.scalpPath,
-          groupingCSV: selectedPreset.groupingCSV,
+          groupingCSV: selectedPreset.groupingCSV.replace(/r\d+/, `r${groupingRadius}`),
           outputPath: "output/strands.obj",
           ...params,
+          color: color,
         }),
       });
       const data = await response.json();
@@ -115,75 +98,78 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+
+    if (sceneRef.current) loadHairModel(sceneRef.current);
+  };
+
+  const loadHairModel = (scene: THREE.Scene) => {
+    const mtlLoader = new MTLLoader();
+    mtlLoader.setPath("http://localhost:8000/output/");
+    mtlLoader.load("strands.mtl", (materials) => {
+      materials.preload();
+
+      const objLoader = new OBJLoader();
+      objLoader.setMaterials(materials);
+      objLoader.setPath("http://localhost:8000/output/");
+      objLoader.load("strands.obj", (obj) => {
+        obj.scale.set(0.05, 0.05, 0.05);
+
+        const box = new THREE.Box3().setFromObject(obj);
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+        obj.position.sub(center);
+
+        const existing = scene.getObjectByName("HairModel");
+        if (existing) scene.remove(existing);
+
+        obj.name = "HairModel";
+        scene.add(obj);
+      });
+    });
   };
 
   return (
     <div className="app-container">
       <div className="sidebar">
-        <h1>Gerador de Cabelo</h1>
+        <h1>Simulador de Cabelo Cacheado</h1>
+        <p className="description">Explore diferentes configurações de cabelo. Ajuste os parâmetros abaixo e visualize os resultados em tempo real.</p>
 
-        <label htmlFor="preset">Preset:</label>
-        <select
-          id="preset"
-          value={selectedPreset.name}
-          onChange={(e) =>
-            setSelectedPreset(presets.find((p) => p.name === e.target.value)!)
-          }
-        >
+        <label htmlFor="preset">Modelo base (preset):</label>
+        <select id="preset" value={selectedPreset.name} onChange={(e) => setSelectedPreset(presets.find((p) => p.name === e.target.value)!)}>
           {presets.map((preset) => (
-            <option key={preset.name} value={preset.name}>
-              {preset.name}
-            </option>
+            <option key={preset.name} value={preset.name}>{preset.name}</option>
           ))}
         </select>
 
+        <label htmlFor="groupingRadius" title="Agrupamento controla o quão agrupados os fios estão (mechas).">Agrupamento (rX):</label>
+        <select id="groupingRadius" value={groupingRadius} onChange={(e) => setGroupingRadius(e.target.value)}>
+          <option value="1">r1 - Fios mais soltos</option>
+          <option value="2">r2</option>
+          <option value="5">r5</option>
+          <option value="10">r10</option>
+          <option value="20">r20</option>
+          <option value="30">r30 - Mechas bem agrupadas</option>
+        </select>
+
         <div className="slider-group">
-          <label htmlFor="curliness">Curliness: {params.curliness.toFixed(2)}</label>
-          <input
-            type="range"
-            id="curliness"
-            min={0}
-            max={1}
-            step={0.01}
-            value={params.curliness}
-            onChange={(e) =>
-              setParams({ ...params, curliness: parseFloat(e.target.value) })
-            }
-          />
+          <label htmlFor="curliness" title="Grau de encaracolamento dos fios.">Curliness: {params.curliness.toFixed(2)}</label>
+          <input type="range" id="curliness" min={0} max={1} step={0.01} value={params.curliness} onChange={(e) => setParams({ ...params, curliness: parseFloat(e.target.value) })} />
 
-          <label htmlFor="length">Length: {params.length.toFixed(2)}</label>
-          <input
-            type="range"
-            id="length"
-            min={0.1}
-            max={2.0}
-            step={0.1}
-            value={params.length}
-            onChange={(e) =>
-              setParams({ ...params, length: parseFloat(e.target.value) })
-            }
-          />
+          <label htmlFor="length" title="Comprimento médio dos fios.">Length: {params.length.toFixed(2)}</label>
+          <input type="range" id="length" min={0.1} max={2.0} step={0.1} value={params.length} onChange={(e) => setParams({ ...params, length: parseFloat(e.target.value) })} />
 
-          <label htmlFor="density">Density: {params.density.toFixed(2)}</label>
-          <input
-            type="range"
-            id="density"
-            min={0.1}
-            max={2.0}
-            step={0.1}
-            value={params.density}
-            onChange={(e) =>
-              setParams({ ...params, density: parseFloat(e.target.value) })
-            }
-          />
+          <label htmlFor="density" title="Quantidade de fios por área.">Density: {params.density.toFixed(2)}</label>
+          <input type="range" id="density" min={0.1} max={2.0} step={0.1} value={params.density} onChange={(e) => setParams({ ...params, density: parseFloat(e.target.value) })} />
         </div>
 
-        <button onClick={handleGenerate} disabled={loading}>
+        <label htmlFor="color" title="Escolha a cor dos fios gerados.">Cor do cabelo:</label>
+        <input type="color" id="color" value={color} onChange={(e) => setColor(e.target.value)} />
+
+        <button onClick={handleGenerate} disabled={loading} title="Gera novos fios de cabelo com base nos parâmetros definidos.">
           {loading ? "Gerando..." : "Gerar Cabelo"}
         </button>
 
         {loading && <div className="loader"></div>}
-
         <p className="log">{log}</p>
       </div>
 
