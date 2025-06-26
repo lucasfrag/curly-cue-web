@@ -34,8 +34,8 @@ export default function App() {
   const [log, setLog] = useState("Aguardando geração...");
   const [groupingRadius, setGroupingRadius] = useState("30");
   const [color, setColor] = useState("#000000");
-  const [params, setParams] = useState({ curliness: 0.5, length: 1.0, density: 1.0 });
-  
+  const [params, setParams] = useState({ curliness: 0.5, length: 1.0, density: 1.0, pattern: "spiral" });
+  const [windIntensity, setWindIntensity] = useState(0.5);
   const [showScalp, setShowScalp] = useState(true);
 
   useEffect(() => {
@@ -68,28 +68,23 @@ export default function App() {
 
     const clock = new THREE.Clock();
 
-const centerScene = () => {
-  const group = new THREE.Group();
-  if (hairRef.current) group.add(hairRef.current.clone());
-  if (scalpRef.current) group.add(scalpRef.current.clone());
+    const animate = () => {
+      requestAnimationFrame(animate);
+      controls.update();
 
-  const box = new THREE.Box3().setFromObject(group);
-  const center = new THREE.Vector3();
-  box.getCenter(center);
+      const time = clock.getElapsedTime();
+      if (hairRef.current) {
+        hairRef.current.children.forEach((child, i) => {
+          const angle = time * 2 + i * 0.2;
+          const offset = Math.sin(angle) * 0.005 * windIntensity;
+          child.rotation.z = offset;
+        });
+      }
 
-  controls.target.copy(center); // centraliza o foco
-  camera.position.copy(center.clone().add(new THREE.Vector3(0, 0.2, 1.2))); // reposiciona a câmera
-  camera.lookAt(center);
-};
+      renderer.render(scene, camera);
+    };
 
-const animate = () => {
-  requestAnimationFrame(animate);
-  controls.update();
-  renderer.render(scene, camera);
-};
-
-animate();
-setTimeout(centerScene, 300); // espera carregar os modelos antes de centralizar
+    animate();
 
     loadHairModel(scene);
     if (showScalp) loadScalpModel(scene);
@@ -134,13 +129,6 @@ setTimeout(centerScene, 300); // espera carregar os modelos antes de centralizar
     if (sceneRef.current) loadHairModel(sceneRef.current);
   };
 
-  const centerObject = (obj: THREE.Object3D) => {
-    const box = new THREE.Box3().setFromObject(obj);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
-    obj.position.sub(center);
-  };
-
   const loadHairModel = (scene: THREE.Scene) => {
     const mtlLoader = new MTLLoader();
     mtlLoader.setPath("http://localhost:8000/output/");
@@ -163,20 +151,20 @@ setTimeout(centerScene, 300); // espera carregar os modelos antes de centralizar
     });
   };
 
-const loadScalpModel = (scene: THREE.Scene) => {
-  const loader = new OBJLoader();
-  loader.setPath("http://localhost:8000/");
-  loader.load(selectedPreset.scalpPath, (obj) => {
-    obj.name = "ScalpModel";
-    obj.scale.set(0.05, 0.05, 0.05);
+  const loadScalpModel = (scene: THREE.Scene) => {
+    const loader = new OBJLoader();
+    loader.setPath("http://localhost:8000/");
+    loader.load(selectedPreset.scalpPath, (obj) => {
+      obj.name = "ScalpModel";
+      obj.scale.set(0.05, 0.05, 0.05);
 
-    const existing = scene.getObjectByName("ScalpModel");
-    if (existing) scene.remove(existing);
+      const existing = scene.getObjectByName("ScalpModel");
+      if (existing) scene.remove(existing);
 
-    scalpRef.current = obj;
-    scene.add(obj);
-  });
-};
+      scalpRef.current = obj;
+      scene.add(obj);
+    });
+  };
 
   return (
     <div className="app-container">
@@ -191,7 +179,7 @@ const loadScalpModel = (scene: THREE.Scene) => {
           ))}
         </select>
 
-        <label htmlFor="groupingRadius" title="Agrupamento controla o quão agrupados os fios estão (mechas).">Agrupamento (rX):</label>
+        <label htmlFor="groupingRadius">Agrupamento (rX):</label>
         <select id="groupingRadius" value={groupingRadius} onChange={(e) => setGroupingRadius(e.target.value)}>
           <option value="1">r1 - Fios mais soltos</option>
           <option value="2">r2</option>
@@ -202,26 +190,37 @@ const loadScalpModel = (scene: THREE.Scene) => {
         </select>
 
         <div className="slider-group">
-          <label htmlFor="curliness" title="Grau de encaracolamento dos fios.">Curliness: {params.curliness.toFixed(2)}</label>
+          <label htmlFor="curliness">Curliness: {params.curliness.toFixed(2)}</label>
           <input type="range" id="curliness" min={0} max={1} step={0.01} value={params.curliness} onChange={(e) => setParams({ ...params, curliness: parseFloat(e.target.value) })} />
 
-          <label htmlFor="length" title="Comprimento médio dos fios.">Length: {params.length.toFixed(2)}</label>
+          <label htmlFor="length">Length: {params.length.toFixed(2)}</label>
           <input type="range" id="length" min={0.1} max={2.0} step={0.1} value={params.length} onChange={(e) => setParams({ ...params, length: parseFloat(e.target.value) })} />
 
-          <label htmlFor="density" title="Quantidade de fios por área.">Density: {params.density.toFixed(2)}</label>
+          <label htmlFor="density">Density: {params.density.toFixed(2)}</label>
           <input type="range" id="density" min={0.1} max={2.0} step={0.1} value={params.density} onChange={(e) => setParams({ ...params, density: parseFloat(e.target.value) })} />
+
+          <label htmlFor="pattern">Tipo de Curvatura:</label>
+          <select id="pattern" value={params.pattern} onChange={(e) => setParams({ ...params, pattern: e.target.value })}>
+            <option value="spiral">Espiral</option>
+            <option value="zigzag">Zigue-zague</option>
+            <option value="wavy">Ondulado</option>
+          </select>
         </div>
 
-        <label htmlFor="color" title="Escolha a cor dos fios gerados.">Cor do cabelo:</label>
+        <label htmlFor="color">Cor do cabelo:</label>
         <input type="color" id="color" value={color} onChange={(e) => setColor(e.target.value)} />
 
+        <label>
+          Intensidade do Vento: {windIntensity.toFixed(2)}
+          <input type="range" min="0" max="2" step="0.01" value={windIntensity} onChange={(e) => setWindIntensity(parseFloat(e.target.value))} />
+        </label>
 
         <label>
           <input type="checkbox" checked={showScalp} onChange={(e) => setShowScalp(e.target.checked)} />
           Mostrar couro cabeludo
         </label>
 
-        <button onClick={handleGenerate} disabled={loading} title="Gera novos fios de cabelo com base nos parâmetros definidos.">
+        <button onClick={handleGenerate} disabled={loading}>
           {loading ? "Gerando..." : "Gerar Cabelo"}
         </button>
 
