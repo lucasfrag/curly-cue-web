@@ -24,6 +24,7 @@ const presets: Preset[] = [
 ];
 
 export default function App() {
+  
   const simulatorRef = useRef<HairSimulator | null>(null);
   const sceneRef = useRef<THREE.Scene>();
   const hairRef = useRef<THREE.Object3D>();
@@ -48,7 +49,12 @@ export default function App() {
   const gravityRef = useRef(gravityStrength);
   const windRef = useRef(windStrength);
   const stiffnessRef = useRef(stiffness);
+  const [damping, setDamping] = useState(0.95);
+  const dampingRef = useRef(damping);
 
+  useEffect(() => {
+    dampingRef.current = damping;
+  }, [damping]);
 
   useEffect(() => {
     physicsOnRef.current = physicsOn;
@@ -122,6 +128,7 @@ export default function App() {
           gravity: new THREE.Vector3(0, -gravityRef.current, 0),
           wind: new THREE.Vector3(windRef.current, 0, 0),
           stiffness: stiffnessRef.current,
+          damping: dampingRef.current, // ✅ novo parâmetro
         });
         simulatorRef.current.update();
       }
@@ -250,108 +257,66 @@ export default function App() {
   return (
     <div className="app-container">
 
-<div className="sidebar">
-  <h1>💇 Curly Hair Simulator</h1>
-  <p className="description">
-    Explore different hair configurations. Adjust the parameters below and visualize the results in real time.
-  </p>
+      <div className="sidebar">
+        <h1>💇 Curly Hair Simulator</h1>
+        <p className="description">
+          Explore different hair configurations. Adjust the parameters below and visualize the results in real time.
+        </p>
 
-  <div className="card">
-    <h3>🧬 Model</h3>
-    <label>Base model (preset):</label>
-    <select value={selectedPreset.name} onChange={(e) => setSelectedPreset(presets.find(p => p.name === e.target.value)!)} >
-      {presets.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-    </select>
+        <div className="card">
+          <h3>🧬 Model</h3>
+          <label>Base model (preset):</label>
+          <select value={selectedPreset.name} onChange={(e) => setSelectedPreset(presets.find(p => p.name === e.target.value)!)} >
+            {presets.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
+          </select>
 
-    <label>Clumping (rX):</label>
-    <select value={groupingRadius} onChange={(e) => setGroupingRadius(e.target.value)} >
-      <option value="1">r1 - Loose strands</option>
-      <option value="2">r2</option>
-      <option value="5">r5</option>
-      <option value="10">r10</option>
-      <option value="20">r20</option>
-      <option value="30">r30 - Tight groups</option>
-    </select>
+          <label>Clumping (rX):</label>
+          <select value={groupingRadius} onChange={(e) => setGroupingRadius(e.target.value)} >
+            <option value="1">r1 - Loose strands</option>
+            <option value="2">r2</option>
+            <option value="5">r5</option>
+            <option value="10">r10</option>
+            <option value="20">r20</option>
+            <option value="30">r30 - Tight groups</option>
+          </select>
 
-    <label>Hair color:</label>
-    <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
+          <label>Hair color:</label>
+          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
 
-    <label>
-      <input type="checkbox" checked={showScalp} onChange={(e) => setShowScalp(e.target.checked)} />
-      Show scalp
-    </label>
-  </div>
+          <label>
+            <input type="checkbox" checked={showScalp} onChange={(e) => setShowScalp(e.target.checked)} />
+            Show scalp
+          </label>
+        </div>
 
-  <div className="card">
-    <h3>🎛️ Parameters</h3>
-    <div className="slider-group">
-      <label>🌀 Curliness: {params.curliness.toFixed(2)}</label>
-      <input type="range" min={0} max={1} step={0.01} value={params.curliness} onChange={(e) => setParams({ ...params, curliness: parseFloat(e.target.value) })} />
+        <div className="card">
+          <h3>🎛️ Parameters</h3>
+          <div className="slider-group">
+            <label>🌀 Curliness: {params.curliness.toFixed(2)}</label>
+            <input type="range" min={0} max={1} step={0.01} value={params.curliness} onChange={(e) => setParams({ ...params, curliness: parseFloat(e.target.value) })} />
 
-      <label>📏 Length: {params.length.toFixed(2)}</label>
-      <input type="range" min={0.1} max={2.0} step={0.1} value={params.length} onChange={(e) => setParams({ ...params, length: parseFloat(e.target.value) })} />
+            <label>📏 Length: {params.length.toFixed(2)}</label>
+            <input type="range" min={0.1} max={2.0} step={0.1} value={params.length} onChange={(e) => setParams({ ...params, length: parseFloat(e.target.value) })} />
 
-      <label>🧵 Density: {params.density.toFixed(2)}</label>
-      <input type="range" min={0.1} max={2.0} step={0.1} value={params.density} onChange={(e) => setParams({ ...params, density: parseFloat(e.target.value) })} />
-    </div>
-  </div>
-  <div className="card">
-    <h3>⚙️ Actions</h3>
-    <button onClick={handleGenerate} disabled={loading}>
-      {loading ? "⏳ Generating..." : "✨ Generate Hair"}
-    </button>
+            <label>🧵 Density: {params.density.toFixed(2)}</label>
+            <input type="range" min={0.1} max={2.0} step={0.1} value={params.density} onChange={(e) => setParams({ ...params, density: parseFloat(e.target.value) })} />
+          </div>
+        </div>
+        <div className="card">
+          <h3>⚙️ Actions</h3>
+          <button onClick={handleGenerate} disabled={loading}>
+            {loading ? "⏳ Generating..." : "✨ Generate Hair"}
+          </button>
 
-    <a href="http://localhost:8000/output/strands.obj" download="generated_hair.obj" className="download-button">
-      ⬇️ Download .obj
-    </a>
+          <a href="http://localhost:8000/output/strands.obj" download="generated_hair.obj" className="download-button">
+            ⬇️ Download .obj
+          </a>
 
-    {loading && <div className="loader"></div>}
-    <p className="log">{log}</p>
-  </div>
+          {loading && <div className="loader"></div>}
+          <p className="log">{log}</p>
+        </div>
 
-
-  <div className="card">
-    <h3>🌬️ Physics</h3>
-
-    <label>🌎 Gravity: {gravityStrength.toFixed(3)}</label>
-    <input type="range" min={0} max={0.1} step={0.001} value={gravityStrength} onChange={(e) => setGravityStrength(parseFloat(e.target.value))} />
-
-    <label>💨 Wind: {windStrength.toFixed(3)}</label>
-    <input type="range" min={0} max={0.1} step={0.001} value={windStrength} onChange={(e) => setWindStrength(parseFloat(e.target.value))} />
-
-    <label>🧱 Stiffness: {stiffness.toFixed(2)}</label>
-    <input type="range" min={0} max={1} step={0.01} value={stiffness} onChange={(e) => setStiffness(parseFloat(e.target.value))} />
-
-    <button
-      onClick={() => setPhysicsOn(!physicsOn)}
-      style={{ backgroundColor: physicsOn ? "#c0392b" : "#27ae60", marginBottom: "10px" }}
-    >
-      {physicsOn ? "🛑 Disable Physics" : "▶️ Enable Physics"}
-    </button>
-
-    <button
-      onClick={() => {
-        setPhysicsOn(false);
-        if (sceneRef.current) {
-          const scene = sceneRef.current;
-          const hair = scene.getObjectByName("HairModel");
-          const scalp = scene.getObjectByName("ScalpModel");
-          if (hair) scene.remove(hair);
-          if (scalp) scene.remove(scalp);
-          loadHairModel(scene);
-          if (showScalp) loadScalpModel(scene);
-          setLog("Scene reset.");
-        }
-      }}
-      style={{ backgroundColor: "#7f8c8d" }}
-    >
-      ♻️ Reset Scene
-    </button>
-  </div>
-
-
-
-</div>
+      </div>
 
 
       <div className="preview" ref={containerRef}></div>
