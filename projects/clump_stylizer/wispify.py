@@ -245,7 +245,15 @@ if __name__ == "__main__":
                 amps_rand = random.choice(amps_coll)
                 angs_rand = random.choice(angs_coll)
             freqs = amps_rand*(np.cos(angs_rand) + 1j*np.sin(angs_rand))
-            displacements = np.fft.irfft(freqs, axis = 0, n = 2*len(amps_rand))
+            #displacements = np.fft.irfft(freqs, axis = 0, n = 2*len(amps_rand))
+
+            #Aplicar filtro espectral com base no curliness
+            keep_ratio = args.curliness
+            num_freqs = int(len(amps_rand) * keep_ratio)
+            freqs_filtered = np.zeros_like(freqs)
+            freqs_filtered[:num_freqs] = freqs[:num_freqs]
+
+            displacements = np.fft.irfft(freqs_filtered, axis=0, n=2*len(amps_rand))
 
             shifted_strand = io.par_shift(strand, m1, 2*random.random()-1, 2*random.random()-1, lambda t: io.grow_rate_map(t, args.wispR[0], args.wispR[1]))
             if (len(shifted_strand) < 10): # displacement downscaling: doing smaller winds when the total strand length is low

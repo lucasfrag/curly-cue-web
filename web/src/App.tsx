@@ -4,6 +4,7 @@ import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader";
 import "./App.css";
+import { HairSimulator } from "./HairPhysics";
 
 type Preset = {
   name: string;
@@ -23,10 +24,12 @@ const presets: Preset[] = [
 ];
 
 export default function App() {
+  const simulatorRef = useRef<HairSimulator | null>(null);
   const sceneRef = useRef<THREE.Scene>();
   const hairRef = useRef<THREE.Object3D>();
   const scalpRef = useRef<THREE.Object3D>();
   const containerRef = useRef<HTMLDivElement>(null);
+  const originalHairGeometries = useRef<{ mesh: THREE.Mesh; original: Float32Array }[]>([]);
 
   const [selectedPreset, setSelectedPreset] = useState(presets[0]);
   const [loading, setLoading] = useState(false);
@@ -36,11 +39,33 @@ export default function App() {
   const [params, setParams] = useState({ curliness: 0.5, length: 1.0, density: 1.0 });
   const [showScalp, setShowScalp] = useState(true);
 
-  const [windOn, setWindOn] = useState(true);
-  const [windStrength, setWindStrength] = useState(0.1);
-  const [windSpeed, setWindSpeed] = useState(1.0);
+  const [physicsOn, setPhysicsOn] = useState(false);
+  const [gravityStrength, setGravityStrength] = useState(0.01);
+  const [windStrength, setWindStrength] = useState(0.01);
+  const [stiffness, setStiffness] = useState(0.2);
 
-  const originalHairGeometries = useRef<{ mesh: THREE.Mesh; original: Float32Array }[]>([]);
+  const physicsOnRef = useRef(physicsOn);
+  const gravityRef = useRef(gravityStrength);
+  const windRef = useRef(windStrength);
+  const stiffnessRef = useRef(stiffness);
+
+
+  useEffect(() => {
+    physicsOnRef.current = physicsOn;
+  }, [physicsOn]);
+
+  useEffect(() => {
+    gravityRef.current = gravityStrength;
+  }, [gravityStrength]);
+
+  useEffect(() => {
+    windRef.current = windStrength;
+  }, [windStrength]);
+
+  useEffect(() => {
+    stiffnessRef.current = stiffness;
+  }, [stiffness]);
+
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -88,32 +113,22 @@ export default function App() {
 
     const animate = () => {
       requestAnimationFrame(animate);
-      const elapsed = clock.getElapsedTime();
+      controls.update();
 
-      if (windOn && originalHairGeometries.current.length > 0) {
-        originalHairGeometries.current.forEach(({ mesh, original }) => {
-          const geometry = mesh.geometry as THREE.BufferGeometry;
-          const positionAttr = geometry.attributes.position as THREE.BufferAttribute;
-          const pos = positionAttr.array as Float32Array;
+      if (simulatorRef.current && physicsOnRef.current) {
 
-          for (let i = 0; i < pos.length; i += 3) {
-            const ox = original[i];
-            const oy = original[i + 1];
-            const oz = original[i + 2];
-
-            const offset = (oy + oz) * 2.0;
-            pos[i] = ox + Math.sin(elapsed * windSpeed + offset) * windStrength;
-            pos[i + 1] = oy;
-            pos[i + 2] = oz;
-          }
-
-          positionAttr.needsUpdate = true;
+        console.log("Física está ativa. Atualizando...");
+        simulatorRef.current.setPhysicsParams({
+          gravity: new THREE.Vector3(0, -gravityRef.current, 0),
+          wind: new THREE.Vector3(windRef.current, 0, 0),
+          stiffness: stiffnessRef.current,
         });
+        simulatorRef.current.update();
       }
 
-      controls.update();
       renderer.render(scene, camera);
     };
+
 
     animate();
     setTimeout(centerScene, 300);
@@ -161,10 +176,12 @@ export default function App() {
     if (sceneRef.current) loadHairModel(sceneRef.current);
   };
 
+
   const loadHairModel = (scene: THREE.Scene) => {
     const mtlLoader = new MTLLoader();
+    const timestamp = Date.now();
     mtlLoader.setPath("http://localhost:8000/output/");
-    mtlLoader.load("strands.mtl", (materials) => {
+    mtlLoader.load(`strands.mtl?t=${timestamp}`, (materials) => {
       materials.preload();
 
       const objLoader = new OBJLoader();
@@ -183,21 +200,33 @@ export default function App() {
         originalHairGeometries.current = [];
 
         obj.traverse((child) => {
-          const geometry = (child as any).geometry as THREE.BufferGeometry | undefined;
+          if (!("geometry" in child)) return;
 
-          if (geometry && geometry.attributes?.position) {
-            const position = geometry.attributes.position as THREE.BufferAttribute;
+          const mesh = child as THREE.Mesh;
+          const geometry = mesh.geometry as THREE.BufferGeometry;
 
-            geometry.setAttribute("position", new THREE.BufferAttribute(position.array, 3));
-            geometry.attributes.position.setUsage(THREE.DynamicDrawUsage);
+          if (!geometry || !geometry.attributes?.position) return;
 
-            originalHairGeometries.current.push({
-              mesh: child as THREE.Mesh,
-              original: position.array.slice() as Float32Array,
-            });
+          geometry.attributes.position.setUsage(THREE.DynamicDrawUsage);
 
-            console.log("Adicionado segmento com", position.count, "vértices");
-          }
+
+          simulatorRef.current = new HairSimulator(geometry);
+          simulatorRef.current.setPhysicsParams({
+            gravity: new THREE.Vector3(0, -gravityStrength, 0),
+            wind: new THREE.Vector3(windStrength, 0, 0),
+            stiffness: stiffness,
+          });
+
+
+          const position = geometry.attributes.position as THREE.BufferAttribute;
+          geometry.setAttribute("position", new THREE.BufferAttribute(position.array, 3));
+
+          originalHairGeometries.current.push({
+            mesh: mesh,
+            original: position.array.slice() as Float32Array,
+          });
+
+          console.log("Adicionado segmento com", position.count, "vértices");
         });
       });
     });
@@ -220,59 +249,110 @@ export default function App() {
 
   return (
     <div className="app-container">
-      <div className="sidebar">
-        <h1>Simulador de Cabelo Cacheado</h1>
-        <p className="description">Explore diferentes configurações de cabelo. Ajuste os parâmetros abaixo e visualize os resultados em tempo real.</p>
 
-        <label htmlFor="preset">Modelo base (preset):</label>
-        <select id="preset" value={selectedPreset.name} onChange={(e) => setSelectedPreset(presets.find((p) => p.name === e.target.value)!)} >
-          {presets.map((preset) => (
-            <option key={preset.name} value={preset.name}>{preset.name}</option>
-          ))}
-        </select>
+<div className="sidebar">
+  <h1>💇 Curly Hair Simulator</h1>
+  <p className="description">
+    Explore different hair configurations. Adjust the parameters below and visualize the results in real time.
+  </p>
 
-        <label htmlFor="groupingRadius" title="Agrupamento controla o quão agrupados os fios estão (mechas).">Agrupamento (rX):</label>
-        <select id="groupingRadius" value={groupingRadius} onChange={(e) => setGroupingRadius(e.target.value)} >
-          <option value="1">r1 - Fios mais soltos</option>
-          <option value="2">r2</option>
-          <option value="5">r5</option>
-          <option value="10">r10</option>
-          <option value="20">r20</option>
-          <option value="30">r30 - Mechas bem agrupadas</option>
-        </select>
+  <div className="card">
+    <h3>🧬 Model</h3>
+    <label>Base model (preset):</label>
+    <select value={selectedPreset.name} onChange={(e) => setSelectedPreset(presets.find(p => p.name === e.target.value)!)} >
+      {presets.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
+    </select>
 
-        <div className="slider-group">
-          <label htmlFor="curliness">Curliness: {params.curliness.toFixed(2)}</label>
-          <input type="range" id="curliness" min={0} max={1} step={0.01} value={params.curliness} onChange={(e) => setParams({ ...params, curliness: parseFloat(e.target.value) })} />
+    <label>Clumping (rX):</label>
+    <select value={groupingRadius} onChange={(e) => setGroupingRadius(e.target.value)} >
+      <option value="1">r1 - Loose strands</option>
+      <option value="2">r2</option>
+      <option value="5">r5</option>
+      <option value="10">r10</option>
+      <option value="20">r20</option>
+      <option value="30">r30 - Tight groups</option>
+    </select>
 
-          <label htmlFor="length">Length: {params.length.toFixed(2)}</label>
-          <input type="range" id="length" min={0.1} max={2.0} step={0.1} value={params.length} onChange={(e) => setParams({ ...params, length: parseFloat(e.target.value) })} />
+    <label>Hair color:</label>
+    <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
 
-          <label htmlFor="density">Density: {params.density.toFixed(2)}</label>
-          <input type="range" id="density" min={0.1} max={2.0} step={0.1} value={params.density} onChange={(e) => setParams({ ...params, density: parseFloat(e.target.value) })} />
-        </div>
+    <label>
+      <input type="checkbox" checked={showScalp} onChange={(e) => setShowScalp(e.target.checked)} />
+      Show scalp
+    </label>
+  </div>
 
-        <label htmlFor="color">Cor do cabelo:</label>
-        <input type="color" id="color" value={color} onChange={(e) => setColor(e.target.value)} />
+  <div className="card">
+    <h3>🎛️ Parameters</h3>
+    <div className="slider-group">
+      <label>🌀 Curliness: {params.curliness.toFixed(2)}</label>
+      <input type="range" min={0} max={1} step={0.01} value={params.curliness} onChange={(e) => setParams({ ...params, curliness: parseFloat(e.target.value) })} />
 
-        <label><input type="checkbox" checked={showScalp} onChange={(e) => setShowScalp(e.target.checked)} /> Mostrar couro cabeludo</label>
+      <label>📏 Length: {params.length.toFixed(2)}</label>
+      <input type="range" min={0.1} max={2.0} step={0.1} value={params.length} onChange={(e) => setParams({ ...params, length: parseFloat(e.target.value) })} />
+
+      <label>🧵 Density: {params.density.toFixed(2)}</label>
+      <input type="range" min={0.1} max={2.0} step={0.1} value={params.density} onChange={(e) => setParams({ ...params, density: parseFloat(e.target.value) })} />
+    </div>
+  </div>
+  <div className="card">
+    <h3>⚙️ Actions</h3>
+    <button onClick={handleGenerate} disabled={loading}>
+      {loading ? "⏳ Generating..." : "✨ Generate Hair"}
+    </button>
+
+    <a href="http://localhost:8000/output/strands.obj" download="generated_hair.obj" className="download-button">
+      ⬇️ Download .obj
+    </a>
+
+    {loading && <div className="loader"></div>}
+    <p className="log">{log}</p>
+  </div>
 
 
-        <button onClick={handleGenerate} disabled={loading}>
-          {loading ? "Gerando..." : "Gerar Cabelo"}
-        </button>
+  <div className="card">
+    <h3>🌬️ Physics</h3>
 
-        <a
-          href="http://localhost:8000/output/strands.obj"
-          download="cabelo_gerado.obj"
-          className="download-button"
-        >
-          ⬇️ Baixar .obj
-        </a>
+    <label>🌎 Gravity: {gravityStrength.toFixed(3)}</label>
+    <input type="range" min={0} max={0.1} step={0.001} value={gravityStrength} onChange={(e) => setGravityStrength(parseFloat(e.target.value))} />
 
-        {loading && <div className="loader"></div>}
-        <p className="log">{log}</p>
-      </div>
+    <label>💨 Wind: {windStrength.toFixed(3)}</label>
+    <input type="range" min={0} max={0.1} step={0.001} value={windStrength} onChange={(e) => setWindStrength(parseFloat(e.target.value))} />
+
+    <label>🧱 Stiffness: {stiffness.toFixed(2)}</label>
+    <input type="range" min={0} max={1} step={0.01} value={stiffness} onChange={(e) => setStiffness(parseFloat(e.target.value))} />
+
+    <button
+      onClick={() => setPhysicsOn(!physicsOn)}
+      style={{ backgroundColor: physicsOn ? "#c0392b" : "#27ae60", marginBottom: "10px" }}
+    >
+      {physicsOn ? "🛑 Disable Physics" : "▶️ Enable Physics"}
+    </button>
+
+    <button
+      onClick={() => {
+        setPhysicsOn(false);
+        if (sceneRef.current) {
+          const scene = sceneRef.current;
+          const hair = scene.getObjectByName("HairModel");
+          const scalp = scene.getObjectByName("ScalpModel");
+          if (hair) scene.remove(hair);
+          if (scalp) scene.remove(scalp);
+          loadHairModel(scene);
+          if (showScalp) loadScalpModel(scene);
+          setLog("Scene reset.");
+        }
+      }}
+      style={{ backgroundColor: "#7f8c8d" }}
+    >
+      ♻️ Reset Scene
+    </button>
+  </div>
+
+
+
+</div>
+
 
       <div className="preview" ref={containerRef}></div>
     </div>
