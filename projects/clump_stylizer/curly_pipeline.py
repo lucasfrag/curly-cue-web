@@ -24,7 +24,7 @@ def generate_strands(
         os.path.dirname(__file__),
         "wispify.py"
     )
-
+    
     guide_path = os.path.abspath(guide_path)
     scalp_path = os.path.abspath(scalp_path)
     grouping_csv = os.path.abspath(grouping_csv)

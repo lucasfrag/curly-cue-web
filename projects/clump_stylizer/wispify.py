@@ -194,8 +194,8 @@ if __name__ == "__main__":
     if not os.path.exists(outputDir):
         os.makedirs(outputDir)
 
-    random.seed(1337)
-    np.random.seed(1337)
+    #random.seed(1337)
+    #np.random.seed(1337)
     amps_container = np.load(args.amps)
     angs_container = np.load(args.angs)
     amps_coll = [amps_container[k] for k in amps_container]
