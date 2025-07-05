@@ -64,6 +64,14 @@ npm run dev
 
 The web interface will be available at `http://localhost:5173` and communicates with the API at `http://localhost:8000`.
 
+## 📸 Screenshots
+
+### App.tsx
+<img src="preview_1.png" width="600">
+
+### Physics.tsx
+<img src="preview_2.png" width="600">
+
 ## 🧪 Example Data
 
 The `data/` folder includes:
