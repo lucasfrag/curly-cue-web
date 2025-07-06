@@ -104,6 +104,5 @@ This generates a full hair swatch using the provided examples and saves the outp
 ## 📚 Reference
 
 Kim, T., et al. *Curly-Cue: Curly Hair Geometry from a Single View*. ACM Transactions on Graphics (TOG), SIGGRAPH 2024.  
-[https://theodorekim.com/curlycue.html](https://theodorekim.com/curlycue.html)
 
 
